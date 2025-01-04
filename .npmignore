@@ -1,0 +1,4 @@
+# Update .npmignore to not exclude TypeScript files needed for bundling
+!*.ts
+.cdk.staging
+cdk.out 

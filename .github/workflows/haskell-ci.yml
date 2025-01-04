@@ -1,0 +1,61 @@
+name: CI/CD
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Set up GHC
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.6.4"
+          cabal-version: "3.10.2.0"
+
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cabal/store
+            dist-newstyle
+            wai-handler-hal-cdk/node_modules
+          key: ${{ runner.os }}-build-${{ hashFiles('**/*.cabal', 'wai-handler-hal-cdk/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
+
+      - name: Install CDK dependencies
+        run: |
+          cd wai-handler-hal-cdk
+          npm ci
+
+      - name: Build
+        run: |
+          cabal update
+          cabal build all
+
+      - name: Test
+        run: cabal test all
+
+      - name: Configure AWS credentials
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy with CDK
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cd wai-handler-hal-cdk
+          npm run cdk deploy --require-approval never

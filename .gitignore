@@ -1,0 +1,8 @@
+# CDK asset staging directory
+.cdk.staging
+cdk.out
+
+dist/
+dist-newstyle/
+node_modules/
+.vscode/
