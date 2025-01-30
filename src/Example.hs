@@ -10,6 +10,7 @@ import Data.Proxy (Proxy (..))
 import Data.Text (Text)
 import Servant.API
 import Servant.Server (Application, Server, serve)
+import Network.Wai.Middleware.Cors (simpleCors)
 
 type Api = Greet :<|> Hoot
 
@@ -32,4 +33,4 @@ instance ToJSON Message where
   toJSON (Message t) = object ["message" .= t]
 
 app :: Application
-app = serve (Proxy @Api) $ greet :<|> hoot
+app = simpleCors $ serve (Proxy @Api) $ greet :<|> hoot

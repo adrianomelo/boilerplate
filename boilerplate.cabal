@@ -47,6 +47,7 @@ common deps
     , servant-server   >=0.18.2  && <0.21
     , text             ^>=1.2.3  || ^>=2.0 || ^>=2.1
     , wai-handler-hal
+    , wai-cors          >=0.2.7  && <0.3
 
 executable boilerplate-hal
   import:         opts, deps

@@ -28,8 +28,8 @@ jobs:
           path: |
             ~/.cabal/store
             dist-newstyle
-            wai-handler-hal-cdk/node_modules
-          key: ${{ runner.os }}-build-${{ hashFiles('**/*.cabal', 'wai-handler-hal-cdk/package-lock.json') }}
+            cdk/node_modules
+          key: ${{ runner.os }}-${{ hashFiles('**/*.cabal', 'cdk/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-build-
 
@@ -42,6 +42,9 @@ jobs:
         run: |
           cabal update
           cabal build all
+          cd ../frontend
+          npm install
+          npm run build
 
       - name: Test
         run: cabal test all
