@@ -4,12 +4,12 @@ import {
   aws_apigateway as apigateway,
   aws_lambda as lambda,
   aws_s3 as s3,
-  aws_s3_deployment as s3deploy,
-  aws_cloudfront as cloudfront,
-  aws_cloudfront_origins as origins,
   aws_iam as iam
 } from 'aws-cdk-lib';
 import * as cdk from 'aws-cdk-lib';
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 
 export class WaiHandlerHalCdkStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -23,20 +23,17 @@ export class WaiHandlerHalCdkStack extends Stack {
           platform: 'linux/arm64',
           command: [
             'bash', '-c', [
-              // Install system dependencies
+              'mkdir -p /root/.cabal/store',
               'apt-get update && apt-get install -y gcc libc6-dev libgmp-dev zlib1g-dev',
-              // Update cabal
               'cabal update',
-              // Install dependencies first
-              'cabal build --only-dependencies boilerplate-hal',
-              // Build the actual binary
+              '[ ! -f /root/.cabal/store/00-index.cache ] && cabal build --only-dependencies boilerplate-hal || true',
               'cabal build boilerplate-hal',
-              // Copy the binary to the output location
               'cp $(cabal list-bin boilerplate-hal) /asset-output/bootstrap',
-              'chmod +x /asset-output/bootstrap',
-              // Verify the binary
-              'file /asset-output/bootstrap'
+              'chmod +x /asset-output/bootstrap'
             ].join(' && ')
+          ],
+          volumes: [
+            { hostPath: '/tmp/cabal-cache', containerPath: '/root/.cabal' }
           ],
           user: 'root',
           environment: {
@@ -62,10 +59,8 @@ export class WaiHandlerHalCdkStack extends Stack {
       }
     });
 
-    // Frontend deployment
+    // Frontend deployment - Updated for public website hosting
     const frontendBucket = new s3.Bucket(this, 'FrontendBucket', {
-      websiteIndexDocument: 'index.html',
-      websiteErrorDocument: 'index.html',
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
@@ -73,26 +68,21 @@ export class WaiHandlerHalCdkStack extends Stack {
       autoDeleteObjects: true,
     });
 
-    const originAccessIdentity = new cloudfront.OriginAccessIdentity(this, 'OAI', {
-      comment: `OAI for ${id}`
-    });
-
-    frontendBucket.addToResourcePolicy(new iam.PolicyStatement({
-      actions: ['s3:GetObject'],
-      resources: [frontendBucket.arnForObjects('*')],
-      principals: [new iam.CanonicalUserPrincipal(originAccessIdentity.cloudFrontOriginAccessIdentityS3CanonicalUserId)]
-    }));
+    // Add public read bucket policy
+    // frontendBucket.addToResourcePolicy(new iam.PolicyStatement({
+    //   actions: ['s3:GetObject'],
+    //   resources: [frontendBucket.arnForObjects('*')],
+    //   principals: [new iam.AnyPrincipal()],
+    //   effect: iam.Effect.ALLOW
+    // }));
 
     const frontendDistribution = new cloudfront.Distribution(this, 'FrontendDistribution', {
       defaultRootObject: 'index.html',
       defaultBehavior: {
-        origin: new origins.S3Origin(frontendBucket, {
-          originAccessIdentity,
-        }),
+        origin: origins.S3BucketOrigin.withOriginAccessControl(frontendBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
-        cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD_OPTIONS
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+        compress: true,
       },
       errorResponses: [
         {
@@ -108,31 +98,27 @@ export class WaiHandlerHalCdkStack extends Stack {
           ttl: Duration.minutes(0)
         }
       ],
-      enabled: true,
-      httpVersion: cloudfront.HttpVersion.HTTP2,
+      enabled: true
     });
 
-    new cdk.CfnOutput(this, 'DistributionDomainName', {
-      value: frontendDistribution.distributionDomainName,
-      description: 'The domain name of the CloudFront distribution'
-    });
+    // Remove OAC-related configuration as we're using public website hosting
 
-    new cdk.CfnOutput(this, 'ApiUrl', {
-      value: exampleApi.url,
-      description: 'The URL of the API Gateway endpoint'
+    new cdk.CfnOutput(this, 'WebsiteURL', {
+      value: frontendBucket.bucketWebsiteUrl,
+      description: 'Public website URL'
     });
 
     new s3deploy.BucketDeployment(this, 'DeployFrontend', {
       sources: [
-        s3deploy.Source.asset('../frontend', {
+        s3deploy.Source.asset('../frontend/dist', {
           bundling: {
             image: DockerImage.fromRegistry('node:20'),
             command: [
               'bash', '-c', [
-                'cd /asset-input && npm install && npm run build',
-                'cp -r /asset-input/dist/* /asset-output/',
-                // `sed -i 's|"__API_URL__"|"${exampleApi.url}"|g' /asset-output/*.js`
-                // `sed -i 's|"__API_URL__"|"http://example.com:3000"|g' /asset-output/*.js`
+                'cp -r /asset-input/* /asset-output/',
+                // Remove the filename manipulation commands
+                // Keep this if you need environment variable substitution
+                // `sed -i 's|__API_URL__|${exampleApi.url}|g' /asset-output/*.js*`
               ].join(' && ')
             ]
           }
@@ -140,7 +126,7 @@ export class WaiHandlerHalCdkStack extends Stack {
       ],
       destinationBucket: frontendBucket,
       distribution: frontendDistribution,
-      distributionPaths: ['/*']
+      distributionPaths: ['/*'],
     });
   }
 }

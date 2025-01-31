@@ -2,7 +2,7 @@
   "name": "boilerplate-frontend",
   "version": "0.1.0",
   "scripts": {
-    "install": "npm install elm elm-format && elm install",
+    "install": "npm install elm elm-format",
     "start": "parcel public/index.html",
     "build": "parcel build public/index.html --public-url ./",
     "build:prod": "parcel build public/index.html --public-url ./",
